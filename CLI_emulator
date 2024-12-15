@@ -1,0 +1,180 @@
+import os
+import shutil
+import tarfile
+from datetime import datetime
+import sys
+import platform
+
+# Функция для извлечения виртуальной файловой системы
+def extract_vfs(vfs_tar_path, extract_to):
+    with tarfile.open(vfs_tar_path, 'r') as tar:
+        tar.extractall(path=extract_to)
+
+# Основной класс эмулятора оболочки
+class ShellEmulator:
+    def __init__(self, computer_name, vfs_path):
+        self.computer_name = computer_name
+        self.vfs_root = vfs_path
+        self.current_dir = vfs_path
+        self.command_input = ""
+        self.output_lines = [
+            "Type 'help' to see a list of available commands."
+        ]  # Сообщение при старте программы
+        self.start_time = datetime.now()  # Запоминаем время старта
+        self.print_output()
+
+    # Обработчик команд
+    def process_command(self, command):
+        ## self.output_lines.append(f"{os.path.basename(self.current_dir)} $ {command}")
+        self.execute_command(command)
+
+    # Исполнение команд
+    def execute_command(self, command):
+        tokens = command.split()
+        if not tokens:
+            return
+        cmd = tokens[0]
+
+        if cmd == "ls":
+            self.ls_command()
+        elif cmd == "cd":
+            if len(tokens) > 1:
+                self.cd_command(tokens[1])
+            else:
+                self.output_lines.append("Usage: cd <directory>")
+        elif cmd == "help":
+            self.help_command()
+        elif cmd == "exit":
+            exit()
+        elif cmd == "rm":
+            if len(tokens) > 1:
+                self.rm_command(tokens[1:])
+            else:
+                self.output_lines.append("Usage: rm [-r] <file|directory>")
+        elif cmd == "date":
+            self.date_command()
+        elif cmd == "uname":
+            self.uname_command()
+        else:
+            self.output_lines.append(f"Unknown command: {cmd}")
+
+    # Реализация команды ls
+    def ls_command(self):
+        try:
+            dirs = os.listdir(self.current_dir)  # Получаем список содержимого директории
+            for item in dirs:  # Проходим по каждому элементу в директории
+                self.output_lines.append("  " + item)  # Добавляем элемент на новую строку
+        except FileNotFoundError:
+            self.output_lines.append("Directory not found")
+
+    # Реализация команды cd
+    def cd_command(self, path):
+        if path == "..":
+            # Возвращаемся в родительскую директорию
+            new_path = os.path.dirname(self.current_dir)
+            # Убеждаемся, что мы не выходим за пределы виртуальной файловой системы
+            if not new_path.startswith(self.vfs_root):
+                new_path = self.vfs_root
+            self.current_dir = new_path
+        else:
+            new_path = os.path.join(self.current_dir, path)
+            if os.path.isdir(new_path):
+                self.current_dir = new_path
+            else:
+                self.output_lines.append(f"No such directory: {path}")
+
+    # Реализация команды help
+    def help_command(self):
+        help_text = [
+            "Available commands:",
+            "  ls                         - List files and directories",
+            "  cd <directory>             - Change the current directory",
+            "  rm [-r] <file|directory>   - Remove a file or directory (use -r for recursive removal)",
+            "  date                       - Show the current date and time",
+            "  uname                      - Show system information",
+            "  help                       - Show this help message",
+            "  exit                       - Quit the shell emulator"
+        ]
+        self.output_lines.extend(help_text)
+
+    # Реализация команды rm
+    def rm_command(self, args):
+        recursive = False
+        targets = []
+
+        for arg in args:
+            if arg in ['-r', '--recursive']:
+                recursive = True
+            else:
+                targets.append(arg)
+
+        if not targets:
+            self.output_lines.append("Usage: rm [-r] <file|directory>")
+            return
+
+        for target in targets:
+            target_path = os.path.join(self.current_dir, target)
+            try:
+                if os.path.isfile(target_path):
+                    os.remove(target_path)
+                    self.output_lines.append(f"Removed file '{target}'")
+                elif os.path.isdir(target_path):
+                    if recursive:
+                        shutil.rmtree(target_path)
+                        self.output_lines.append(f"Removed directory '{target}' recursively")
+                    else:
+                        self.output_lines.append(f"Directory '{target}' not removed. Use -r to remove recursively.")
+                else:
+                    self.output_lines.append(f"No such file or directory: {target}")
+            except FileNotFoundError:
+                self.output_lines.append(f"No such file or directory: {target}")
+            except Exception as e:
+                self.output_lines.append(str(e))
+
+    # Реализация команды date
+    def date_command(self):
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.output_lines.append(f"Current date and time: {current_date}")
+
+    # Реализация команды uname
+    def uname_command(self):
+        system_info = {
+            "  System": platform.system(),
+            "  Node Name": platform.node(),
+            "  Release": platform.release(),
+            "  Version": platform.version(),
+            "  Machine": platform.machine(),
+            "  Processor": platform.processor(),
+            "  User Name": self.computer_name
+        }
+        self.output_lines.append("System information:")
+        for key, value in system_info.items():
+            self.output_lines.append(f"{key}: {value}")
+
+    # Вывод сообщений на экран
+    def print_output(self):
+        for line in self.output_lines[-20:]:  # Печатаем последние 20 строк
+            print(line)
+        self.output_lines = []  # Очищаем список вывода
+
+# Основная функция для запуска эмулятора
+def run_shell_emulator(computer_name, vfs_tar_path):
+    # Подготовка виртуальной файловой системы
+    vfs_dir = os.path.join(".", "vfs")  # Путь к извлечению виртуальной файловой системы
+    extract_vfs(vfs_tar_path, vfs_dir)
+    # Инициализация эмулятора
+    emulator = ShellEmulator(computer_name, vfs_dir)
+    # Главный цикл программы
+    while True:
+        command = input(f"{os.path.basename(emulator.current_dir)} $ ")
+        emulator.process_command(command)
+        emulator.print_output()
+
+# Пример использования
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: shell_emulator.py <computer_name> <vfs_tar path>")
+        sys.exit(1)
+    computer_name = sys.argv[1]
+    vfs_tar_path = sys.argv[2]
+    run_shell_emulator(computer_name, vfs_tar_path)
