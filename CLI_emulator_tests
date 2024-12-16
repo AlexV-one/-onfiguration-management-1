@@ -1,0 +1,123 @@
+import os
+import shutil
+import tarfile
+import unittest
+import platform
+from datetime import datetime
+
+from CLI_emulator import ShellEmulator
+
+
+# Вспомогательная функция для создания временной виртуальной файловой системы
+def create_test_vfs(test_dir, vfs_tar_path):
+    # Создаем структуру директорий и файлов
+    os.makedirs(os.path.join(test_dir, 'vfs/home'))
+    os.makedirs(os.path.join(test_dir, 'vfs/home/user1'))
+    os.makedirs(os.path.join(test_dir, 'vfs/home/user2'))
+    with open(os.path.join(test_dir, 'vfs/home/user1/file1.txt'), 'w') as f:
+        f.write('File 1')
+    with open(os.path.join(test_dir, 'vfs/home/user2/file2.txt'), 'w') as f:
+        f.write('File 2')
+
+    # Создаем tar-архив
+    with tarfile.open(vfs_tar_path, 'w') as tar:
+        tar.add(os.path.join(test_dir, 'vfs'), arcname='vfs')
+
+class TestShellEmulator(unittest.TestCase):
+    def setUp(self):
+        # Создаем временную директорию для тестов
+        self.test_dir = 'test_shell_emulator'
+        os.makedirs(self.test_dir, exist_ok=True)
+        self.vfs_tar_path = os.path.join(self.test_dir, 'vfs.tar')
+        self.vfs_root = os.path.join(self.test_dir, 'vfs')
+        create_test_vfs(self.test_dir, self.vfs_tar_path)
+
+    def tearDown(self):
+        # Удаляем временную директорию после тестов
+        shutil.rmtree(self.test_dir)
+
+    def test_cd_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+
+        # Тест 1: Переход в поддиректорию
+        emulator.process_command('cd home')
+        self.assertEqual(os.path.basename(emulator.current_dir), 'home')
+
+        # Тест 2: Переход в родительскую директорию
+        emulator.process_command('cd ..')
+        self.assertEqual(os.path.basename(emulator.current_dir), 'vfs')
+
+        # Тест 3: Переход в несуществующую директорию
+        emulator.process_command('cd non_existent')
+        self.assertEqual(os.path.basename(emulator.current_dir), 'vfs')
+        self.assertIn("No such directory: non_existent", emulator.output_lines)
+
+    def test_ls_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+
+        # Тест 1: Список файлов и директорий в корневой директории
+        emulator.process_command('cd home')
+        emulator.process_command('ls')
+        self.assertIn('  user1', emulator.output_lines)
+        self.assertIn('  user2', emulator.output_lines)
+
+        # Тест 2: Список файлов в поддиректории
+        emulator.process_command('cd user1')
+        emulator.process_command('ls')
+        self.assertIn('  file1.txt', emulator.output_lines)
+
+        # Тест 3: Список файлов в корневой директории
+        emulator.process_command('cd ..')
+        emulator.process_command('ls')
+        self.assertIn('  user1', emulator.output_lines)
+        self.assertIn('  user2', emulator.output_lines)
+
+    def test_rm_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+
+        # Тест 1: Удаление файла
+        emulator.process_command('cd home/user1')
+        emulator.process_command('rm file1.txt')
+        self.assertIn("Removed file 'file1.txt'", emulator.output_lines)
+        self.assertNotIn('file1.txt', os.listdir(emulator.current_dir))
+
+        # Тест 2: Удаление директории без рекурсии
+        emulator.process_command('cd ..')
+        emulator.process_command('rm user2')
+        self.assertIn("Directory 'user2' not removed. Use -r to remove recursively.", emulator.output_lines)
+        self.assertIn('user2', os.listdir(emulator.current_dir))
+
+        # Тест 3: Удаление директории с рекурсией
+        emulator.process_command('rm -r user2')
+        self.assertIn("Removed directory 'user2' recursively", emulator.output_lines)
+        self.assertNotIn('user2', os.listdir(emulator.current_dir))
+
+    def test_date_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+        emulator.process_command('date')
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.assertIn(f"Current date and time: {current_date}", emulator.output_lines)
+
+    def test_uname_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+        emulator.process_command('uname')
+        self.assertIn("System information:", emulator.output_lines)
+        self.assertIn(f"  User Name: test_user", emulator.output_lines)
+        self.assertIn(f"  System: {platform.system()}", emulator.output_lines)
+
+    def test_help_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+        emulator.process_command('help')
+        self.assertIn("Available commands:", emulator.output_lines)
+        self.assertIn("  ls                         - List files and directories", emulator.output_lines)
+        self.assertIn("  exit                       - Quit the shell emulator", emulator.output_lines)
+
+    def test_exit_command(self):
+        emulator = ShellEmulator('test_user', self.vfs_root)
+        with self.assertRaises(SystemExit) as cm:
+            emulator.process_command('exit')
+        self.assertEqual(cm.exception.code, None)
+
+
+if __name__ == '__main__':
+    unittest.main()
