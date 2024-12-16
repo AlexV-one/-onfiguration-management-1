@@ -21,12 +21,14 @@
 
 ## Запуск
 Для работы с командной строкой в терминале вводится 
-
-`python CLI_emulator.py PC vfs.tar`
+```
+python CLI_emulator.py PC vfs.tar
+```
   
 Для работы тестов в терминале вводится 
-
-`python -m unittest CLI_emulator_tests.py`
+```
+python -m unittest CLI_emulator_tests.py
+```
   
 ## Доступные команды
 - ls - Список файлов и каталогов
